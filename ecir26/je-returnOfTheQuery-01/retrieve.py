@@ -30,7 +30,9 @@ def get_index(dataset, field, output_path):
         print("Index Documents")
         #This makes problems, if the default_text is used
         with tracking(export_file_path=index_dir / "index-metadata.yml", export_format=ExportFormat.IR_METADATA):
-            pt.IterDictIndexer(str(index_dir.absolute()), meta={'docno' : 100}, verbose=True).index(docs)
+            pt.IterDictIndexer(str(index_dir.absolute()), meta={'docno' : 100}, verbose=True, stemmer="PorterStemmer").index(docs)
+            #pt.IterDictIndexer(str(index_dir.absolute()), meta={'docno' : 100}, verbose=True, stemmer="TRv2PorterStemmer").index(docs)
+            #pt.IterDictIndexer(str(index_dir.absolute()), meta={'docno' : 100}, verbose=True, stemmer="EnglishSnowballStemmer").index(docs)
 
         
     return pt.IndexFactory.of(str(index_dir.absolute()))
