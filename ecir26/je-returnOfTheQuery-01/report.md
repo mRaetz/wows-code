@@ -1,9 +1,5 @@
 # Retrieval System - Return of the Query
 
-## Indexing
-
-Lorem Ipsum
-
 ## Reranking
 
 In der parallel laufenden Vorlesung wurde **Reranking** als erste Verbesserung eines bestehenden Systems vorgeschlagen. 
@@ -28,18 +24,32 @@ Ein typischer Ansatz für eine Reranking-Pipeline ist der folgende:
 
 Dieser Ansatz wird auch in unserem System mit anderen Top-Score-Ergebnissen verwendet.
 
-### Code
+## Code
 
 Um das Rad nicht neu zu erfinden, nutzen wir die Python-Retrieval-Bibliothek [Pyterrier](https://github.com/terrier-org/pyterrier.git). Pyterrier bietet viele bereits implementierte und optimierte Retrieval-Methoden und -Ansätze. Standardmäßig ist BM25 enthalten.
 
-Pointwise-Modelle sind verfügbar, Pairwise-Modelle jedoch nicht. Dafür gibt es die Bibliothek [Pyterrier T5](https://github.com/terrierteam/pyterrier_t5?tab=readme-overview). Diese implementiert die monoT5- und die duiT5-Modelle sowie die Pointwise- und die Pairwise-Modelle. Diese können direkt genutzt werden.
+Falls zur Laufzeit noch kein Index existiert, wird dieser im Zuge der `get_index()` Funktion erstellt. Dabei können verschiedene stemmer verwendet werden.
+
+```python
+def get_index(dataset, field, output_path):
+    index_dir = output_path / "indexes" / f"{dataset}-on-{field}"
+    # ...
+
+    with tracking(export_file_path=index_dir / "index-metadata.yml", export_format=ExportFormat.IR_METADATA):
+        # Verwendung der in Pyterrier verfügbaren Implementierung des Porter-Stemming Algorithmus
+        pt.IterDictIndexer(str(index_dir.absolute()), meta={'docno' : 100}, verbose=True, stemmer="PorterStemmer").index(docs)
+
+    return pt.IndexFactory.of(str(index_dir.absolute()))
+```
+
+Pointwise-Modelle sind verfügbar, Pairwise-Modelle jedoch nicht. Dafür gibt es die Bibliothek [Pyterrier T5](https://github.com/terrierteam/pyterrier_t5?tab=readme-overview). Diese implementiert die monoT5- und die duoT5-Modelle sowie die Pointwise- und die Pairwise-Modelle. Diese können direkt genutzt werden.
 
 ```python
 import pyterrier
 import pyterrier_t5
 
-# Initialisierung der Retrival Modelle
-# Für die einfachheit, wird der Index nicht definiert.
+# Initialisierung der Retrieval Modelle
+# Für die einfachheit wird der Index nicht definiert.
 bm25 = pt.terrier.Retriever(index, wmodel="BM25")
 reranker_pointwise = MonoT5ReRanker()
 reranker_pairwise = DuoT5ReRanker()
@@ -50,28 +60,107 @@ In Pyterrier gibt es verschiedene Operatoren, mit denen sich Aussagen vereinfach
 ```python
 # Rerank Pipeline
 mono_pipeline = retriever % 100 >> reranker_pointwise
-duo_pipeline = mono_pipeline % 5  >> reranker_pairwise
+duo_pipeline = mono_pipeline % 5 >> reranker_pairwise
 run = duo_pipeline.transform(topics)
 ```
 
-### Ergebnis
+## Ergebnis
+
+### Ein Erster Ansatz
 
 Zu Beginn haben wir die Baseline des Systems mit einem BM25-Retrieval-System gemessen. Als Gütemaß haben wir NDCG@10 gewählt. Dieser Wert wurde für alle berechnet und anhand dessen wurden die Vergleiche durchgeführt.
 
-||Modell|  ndcg@10|
+| |Modell|  ndcg@10|
 |-|-|-|
-|-|Baseline BM25|0.451635|
-|0|                pyterrier-PL2-on-title-3| 0.263840|
-|1|               pyterrier-BM25-on-title-3| 0.274660|
-|2|        pyterrier-DirichletLM-on-title-3| 0.110035|
+|-|                           Baseline BM25| 0.451635|
+|0|        pyterrier-DirichletLM-on-title-3| 0.110035|
+|1|         pyterrier-BM25-on-description-3| 0.162492|
+|2|  pyterrier-DirichletLM-on-description-3| 0.065785|
 |3| pyterrier-DirichletLM-on-default_text-3| 0.247526|
-|4|  pyterrier-DirichletLM-on-description-3| 0.065785|
-|5|         pyterrier-BM25-on-description-3| 0.162492|
-|6|        pyterrier-BM25-on-default_text-3| 0.317093|
-|7|         pyterrier-PL2-on-default_text-3| 0.346148|
-|8|          pyterrier-PL2-on-description-3| 0.139911|
+|4|        pyterrier-BM25-on-default_text-3| 0.317093|
+|5|               pyterrier-BM25-on-title-3| 0.274660|
+|6|         pyterrier-PL2-on-default_text-3| 0.346148|
+|7|          pyterrier-PL2-on-description-3| 0.139911|
+|8|                pyterrier-PL2-on-title-3| 0.263840|
 
 Wie in der Tabelle zu sehen ist, wurden die Baseline-Werte unterschritten. Das System hat sich durch das Reranking nicht verbessert, sondern verschlechtert. Die Gründe dafür können wir uns derzeit nicht erklären.
+
+### Verwendung von Stemming und optimierung des Rerankers
+
+Durch experimentelle Versuche mit den Werten der mono / duo pipeline konnten die Ergebnisse des Retrieval-Systems (teilweise) verbessert werden. Während 
+
+```python
+# Rerank Pipeline
+mono_pipeline = retriever % 100 >> reranker_pointwise
+duo_pipeline = mono_pipeline % 10 >> reranker_pairwise
+run = duo_pipeline.transform(topics)
+```
+
+<table>
+<tr><th><div align="center">mono 100 / duo 5</th><th><center>mono 100 / duo 10</th></tr>
+<tr><td>
+
+| |Modell|  ndcg@10|
+|-|-|-|
+|0|        pyterrier-DirichletLM-on-title-3| 0.110035|
+|1|         pyterrier-BM25-on-description-3| 0.162492|
+|2|  pyterrier-DirichletLM-on-description-3| 0.065785|
+|3| pyterrier-DirichletLM-on-default_text-3| 0.247526|
+|4|        pyterrier-BM25-on-default_text-3| 0.317093|
+|5|               pyterrier-BM25-on-title-3| 0.274660|
+|6|         pyterrier-PL2-on-default_text-3| 0.346148|
+|7|          pyterrier-PL2-on-description-3| 0.139911|
+|8|                pyterrier-PL2-on-title-3| 0.263840|
+
+</td><td>
+
+| |Modell|  ndcg@10|
+|-|-|-|
+|0|        pyterrier-DirichletLM-on-title-3| 0.152959|
+|1|         pyterrier-BM25-on-description-3| 0.180296|
+|2|  pyterrier-DirichletLM-on-description-3| 0.110791|
+|3| pyterrier-DirichletLM-on-default_text-3| 0.282637|
+|4|        pyterrier-BM25-on-default_text-3| 0.316709|
+|5|               pyterrier-BM25-on-title-3| 0.302422|
+|6|         pyterrier-PL2-on-default_text-3| 0.414098|
+|7|          pyterrier-PL2-on-description-3| 0.172011|
+|8|                pyterrier-PL2-on-title-3| 0.279087|
+
+</td></tr> </table>
+
+Zusätzlich dazu wurden beim Bau des Index verschiedene Stemmer ausprobiert. Die besten Ergebnisse lieferte der in Pyterrier implementierte Porter-Stemming-Algorithmus, wobei die einzige Veränderung bei BM25 mit default text auftritt.
+
+<table>
+<tr><th><div align="center">Kein Stemming</th><th><center>Porter Stemming</th></tr>
+<tr><td>
+
+| |Modell|  ndcg@10|
+|-|-|-|
+|0|        pyterrier-DirichletLM-on-title-3| 0.152959|
+|1|         pyterrier-BM25-on-description-3| 0.180296|
+|2|  pyterrier-DirichletLM-on-description-3| 0.110791|
+|3| pyterrier-DirichletLM-on-default_text-3| 0.282637|
+|4|        pyterrier-BM25-on-default_text-3| 0.316709|
+|5|               pyterrier-BM25-on-title-3| 0.302422|
+|6|         pyterrier-PL2-on-default_text-3| 0.414098|
+|7|          pyterrier-PL2-on-description-3| 0.172011|
+|8|                pyterrier-PL2-on-title-3| 0.279087|
+
+</td><td>
+
+| |Modell|  ndcg@10|
+|-|-|-|
+|0|        pyterrier-DirichletLM-on-title-3| 0.152959|
+|1|         pyterrier-BM25-on-description-3| 0.180296|
+|2|  pyterrier-DirichletLM-on-description-3| 0.110791|
+|3| pyterrier-DirichletLM-on-default_text-3| 0.282637|
+|4|        pyterrier-BM25-on-default_text-3| 0.370291|
+|5|               pyterrier-BM25-on-title-3| 0.302422|
+|6|         pyterrier-PL2-on-default_text-3| 0.414098|
+|7|          pyterrier-PL2-on-description-3| 0.172011|
+|8|                pyterrier-PL2-on-title-3| 0.279087|
+
+</td></tr> </table>
 
 ## Contributers
 
