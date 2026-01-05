@@ -41,7 +41,7 @@ def get_index(dataset, field, output_path):
 def run_retrieval(output, index, dataset, retrieval_model, text_field_to_retrieve):
     print("Check if run exists")
     tag = f"pyterrier-{retrieval_model}-on-{text_field_to_retrieve}-3"
-    target_dir = output / "runs" / dataset / tag
+    target_dir = output / "runs-2" / dataset / tag
     target_file = target_dir / "run.txt.gz"
 
     if target_file.exists():
